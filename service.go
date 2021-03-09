@@ -20,6 +20,8 @@ type MyTranslator struct {
 var N = 10 //No of retries
 // var N = os.Args[1]
 
+var reqMap = make(map[string]string)
+
 func NewService() *Service {
 	t := newRandomTranslator(
 		100*time.Millisecond,
@@ -41,6 +43,15 @@ func (m *MyTranslator) Translate(ctx context.Context, from, to language.Tag, dat
 	var res string
 	var err error
 	var duration = 2
+
+	// Cache request results in memory
+	var key = from.String() + "-" + to.String() + "-" + data
+	_, ok := reqMap[key]
+	if ok {
+		fmt.Println("Results from Cache")
+		return reqMap[key], nil
+	}
+
 	for N > 0 {
 		res, err = m.myTranslator.Translate(ctx, from, to, data)
 		if err != nil {
@@ -51,6 +62,7 @@ func (m *MyTranslator) Translate(ctx context.Context, from, to language.Tag, dat
 			duration = duration * 2
 			continue
 		} else {
+			reqMap[key] = res
 			return res, err
 		}
 	}
