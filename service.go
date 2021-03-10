@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/text/language"
 )
 
@@ -38,27 +39,38 @@ func NewService() *Service {
 	}
 }
 
+var requestGroup singleflight.Group
+
 // Mocking the external translation
 func (m *MyTranslator) Translate(ctx context.Context, from, to language.Tag, data string) (string, error) {
-	var res string
-	var err error
-	var duration = 2
 
 	// Cache request results in memory
 	var key = from.String() + "-" + to.String() + "-" + data
 	_, ok := reqMap[key]
 	if ok {
-		fmt.Println("Results from Cache")
+		fmt.Println("Results from Cache", reqMap[key])
 		return reqMap[key], nil
 	}
 
+	v, err, _ := requestGroup.Do(key, func() (interface{}, error) {
+		// githubStatus() returns string, error, which statifies interface{}, error, so we can return the result directly.
+		return m.translate(ctx, from, to, data, key)
+	})
+
+	return v.(string), err
+}
+
+func (m *MyTranslator) translate(ctx context.Context, from, to language.Tag, data string, key string) (string, error) {
+	var res string
+	var err error
+	var duration = 2 //backoff time
 	for N > 0 {
 		res, err = m.myTranslator.Translate(ctx, from, to, data)
 		if err != nil {
 			N--
 			waitTime := time.Duration(duration) * time.Millisecond
 			time.Sleep(waitTime)
-			fmt.Println("Error Occured, Waiting after ", waitTime)
+			fmt.Println("Error Occured, Waiting after ", waitTime, err)
 			duration = duration * 2
 			continue
 		} else {
